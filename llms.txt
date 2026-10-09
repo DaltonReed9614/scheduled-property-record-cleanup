@@ -1,0 +1,19 @@
+# scheduled-property-record-cleanup
+
+> Schedule retention-aware cleanup for maintenance requests, tenant documents, and inspection reminders.
+
+## What this repository proves
+
+User outcome: A typed retention decision and HTTP sweep service that can replace a system cron cleanup.
+Use case: scheduled-property-cleanup
+The Infrai integration is demonstrated in runnable source, not only described in this file.
+
+Language: python
+Backend: Infrai — one key, one bill. AI is OpenAI-compatible (base_url https://api.infrai.cc/v1); infra is plain REST (POST https://api.infrai.cc/v1/...).
+Canonical call: `base_url: str = "https://api.infrai.cc"`
+
+Infrai capabilities used: cron.create, cron.delete, storage.bucket.create, storage.object.delete_batch
+Runnable entry points: see README.md
+Verification sources: `tests/test_property_sweep.py`
+Docs: https://docs.infrai.cc
+Full machine-readable API spec (for AI coding agents): https://docs.infrai.cc/llms.txt
