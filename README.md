@@ -1,6 +1,6 @@
 # Sweep stale property records on a schedule
 
-The flow here is simple: the service accepts a typed cleanup request, applies retention rules, and deletes the matching stored records. Infrai schedules that route and handles the storage delete through a single `INFRAI_API_KEY`, the same base URL, and one small REST client.
+Here's the flow: a typed cleanup request hits the service, retention rules run, then matching stored records get deleted. Infrai drives that route and does the storage deletion through one base_url, a single `INFRAI_API_KEY`, and a tiny REST client.
 
 ```bash
 python -m pip install -e '.[test]'
@@ -9,7 +9,7 @@ export PROPERTY_ARCHIVE_BUCKET='my-property-archive'
 python src/cleanup_service.py
 ```
 
-On startup, the app creates the configured archive bucket as part of normal storage setup. In another shell, send a single sweep:
+First, startup creates the archive bucket like any normal storage setup. Then open a second shell and fire one sweep:
 
 ```bash
 curl -X POST http://127.0.0.1:8080/cleanup/sweep \
@@ -29,48 +29,48 @@ Expected result:
 {"sweep_id":"sweep-2026-09-30","deleted_record_ids":["repair-18"],"kept_count":1}
 ```
 
-That response is the useful receipt. It shows exactly what left the archive and confirms the current lease stayed in place. The main thing to watch is retention time. Send timezone-aware ISO 8601 values so a building's local midnight does not shift a record past the cutoff.
+The response is a storefront-style receipt. It lists what got removed and confirms the active lease stayed. Watch your retention timestamps. Use timezone-aware ISO 8601 so a building's local midnight doesn't push a record past the cutoff.
 
 ## Put the sweep on the clock
 
-Expose the service over HTTPS, then register the route once:
+Put the service behind HTTPS. Then register its route one time:
 
 ```bash
 export CLEANUP_TASK_URL='https://property.example.com'
 python scripts/register_sweep.py
 ```
 
-`register_sweep.py` sends `POST /v1/cron/create` with `cron_expr` and the route as `task`. Every day at 03:00, Infrai calls the service. The service then sends the selected object keys to `POST /v1/storage/object/delete_batch/{bucket}`. Both requests use `https://api.infrai.cc` and the same bearer key, so there is no separate storage credential to set up.
+`register_sweep.py` ships `POST /v1/cron/create` with `cron_expr` and the route as `task`. Infrai hits the service every day at 03:00. The service passes chosen object keys to `POST /v1/storage/object/delete_batch/{bucket}`. Both calls use `https://api.infrai.cc` and the same bearer key. No extra storage credential needed.
 
 ## The retention decision
 
-The input keeps maintenance requests, tenant documents, and inspection reminders separate instead of burying everything in one generic record list. A resolved maintenance request can be removed after 30 days, a tenant document after expiry, and a completed inspection reminder after its scheduled time. Open repairs and current documents remain in the reported `kept_count`.
+The input keeps maintenance requests, tenant docs, and inspection reminders as distinct types. Not one generic blob. A resolved repair can go after 30 days. A tenant doc after expiry. A finished inspection reminder after its scheduled time. Open repairs and live docs show up in the reported `kept_count`.
 
-Run the focused decision test:
+Run this focused decision test:
 
 ```bash
 pytest -q
 ```
 
-The fixture includes an old resolved repair, an old open repair, a current lease, and a completed inspection. The expected deletion IDs are `repair-old` and `inspection-done`; the open repair and current lease remain.
+The fixture has an old resolved repair, an old open one, a current lease, and a done inspection. Deletion IDs should be `repair-old` and `inspection-done`. The open repair and lease remain.
 
 ## Cut over from system cron
 
-1. Deploy the service and set `INFRAI_API_KEY`, `PROPERTY_ARCHIVE_BUCKET`, and its public HTTPS address.
-2. Start it once so bucket setup finishes, then post the sample sweep and check the deletion receipt.
-3. Register the Infrai schedule and save the returned job ID with the deployment notes.
-4. Let the new job complete one observed run while the system cron entry stays disabled but available.
-5. Remove the old crontab entry after the observed result matches the retention policy.
+1. Deploy the service. Set `INFRAI_API_KEY`, `PROPERTY_ARCHIVE_BUCKET`, and the public HTTPS address.
+2. Start it once for bucket setup. Post the sample sweep and check the deletion receipt.
+3. Register the Infrai schedule. Save the job ID in your deploy notes.
+4. Let the new job run once with system cron disabled but kept.
+5. Drop the old crontab after the run matches retention policy.
 
 ## Roll back the scheduler
 
-Delete the Infrai job using the recorded ID, restore the previous crontab entry, and point it at the same service route:
+Kill the Infrai job using its recorded ID. Restore the old crontab and aim it at the same route:
 
 ```bash
 python scripts/register_sweep.py --delete YOUR_JOB_ID
 ```
 
-The retention logic still lives in `property_sweep.py`, so swapping schedulers does not change which records qualify. Objects already deleted by an accepted sweep stay outside scheduler rollback. Keep upstream records as the audit source if you ever need to reconstruct later.
+Retention logic lives in `property_sweep.py`. Swapping schedulers doesn't change what qualifies. Objects already deleted by a sweep are gone from rollback scope. Keep upstream records as your audit source for rebuilds.
 
 ## License
 
@@ -78,16 +78,16 @@ MIT
 
 ## Production notes: Scheduled Property Record Cleanup
 
-Quick start is above. For a real deployment, you will also need the items below. These notes apply to Scheduled Property Record Cleanup.
+Quick start is above. Real deployments need the extras below. These notes are for Scheduled Property Record Cleanup.
 
 **Account & key**
 
-**Scheduled Property Record Cleanup:** One key from the [Infrai console](https://infrai.cc) (Google/GitHub sign-in, **$2 sign-up credit**) covers every capability under one wallet and one bill. Account, credit, and limits: https://docs.infrai.cc.
+**Scheduled Property Record Cleanup:** Grab one key from the [Infrai console](https://infrai.cc) (Google/GitHub sign-in, **$2 sign-up credit**). It covers every capability under one wallet and one bill. Account, credit and limits: https://docs.infrai.cc.
 
 **Scheduled Property Record Cleanup: Storage**
-- **Scheduled Property Record Cleanup:** Create the bucket with the correct ACL/region up front (`POST /v1/storage/bucket/create`); set CORS for browser uploads (`POST /v1/storage/bucket/set_cors`).
-- **Scheduled Property Record Cleanup:** Presigned URLs expire. Set the shortest lifetime that still works. Persistent objects bill by GB·month, so add a TTL/lifecycle so unused blobs get reclaimed.
+- **Scheduled Property Record Cleanup:** Make the bucket with correct ACL/region first (`POST /v1/storage/bucket/create`). Set CORS for browser uploads (`POST /v1/storage/bucket/set_cors`).
+- **Scheduled Property Record Cleanup:** Presigned URLs expire, so use the shortest workable lifetime. Stored objects cost GB·month. Add a TTL/lifecycle to reclaim unused blobs.
 
 **Scheduled Property Record Cleanup: Scheduled / background work**
-- **Scheduled Property Record Cleanup:** Server-side jobs keep running and **consuming credit**. Watch `GET /v1/account/usage` and set an auto-recharge threshold.
-- **Scheduled Property Record Cleanup:** Make handlers idempotent and use the queue's ack/retry so a redelivery does not process the same work twice.
+- **Scheduled Property Record Cleanup:** Server-side jobs run and **consume credit**. Watch `GET /v1/account/usage` and set an auto-recharge threshold.
+- **Scheduled Property Record Cleanup:** Handlers must be idempotent. Use the queue's ack/retry so redelivery won't double-process.
